@@ -45,9 +45,11 @@ class TrafficHandler:
         """processes the message and responds to ip"""
         if not message:
             return None
+
         if not self.previous in message:
             #if someone else is sending us messages, our previous must have DCed
             self.previous = message.split("[")[0].strip()
+
 
         if  "[syn ack]" in message:
             return 1  #do nothing, the ack has been received and all is well
@@ -69,6 +71,22 @@ class TrafficHandler:
         """starts the TrafficHandler"""
         p = Process(target=TrafficHandler.accept,args=(self,))
         p.start()
+
+    def send_job(job):
+        """sends a list of buttonpresses to the next elevator"""
+        msg = self.my_ip + job
+        if self.next == self.my_ip:
+            get_next()
+        while not send(msg,self.next):
+            get_next()
+
+    def get_next():
+        """fetches the next ip in line and sets it to self.next,skips itself"""
+        for x,y in enumerate(self.IPs):
+            if y == self.next:
+                self.next = self.IPs[(x+1)%len(self.IPs)] #if self.IPs[(x+1)%len(self.IPs)]  != self.my_ip else self.IPs[(x+2)%len(self.IPs)]
+
+
 
 
     def send(self,message,ip,triesleft=TRIES):
