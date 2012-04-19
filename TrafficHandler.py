@@ -12,6 +12,14 @@
 from multiprocessing import *
 import socket
 import time
+from .python_heis_driver import elevator as el
+
+"""TODO
+--------------------------------------------------------------------------------
+    the elevator has to wait for an ack / syn ack after sending a message instead of just responding
+    ----------------------------------------------------------------------------
+"""
+
 
 class SocketProcess(Process):
     def __init__(self,socket,fun,args):
@@ -35,6 +43,8 @@ class TrafficHandler:
         self.IPs = ["localhost"]
         self.my_ip = socket.getfqdn()
         self.port = 8154
+        self.elevator = el.Elevator()
+        self.elevatorlock = Lock()
         for i in xrange(len(self.IPs)):
             if self.IPs[i] == self.my_ip:
                 self.next = self.IPs[(i+1)%len(self.IPs)] #the next IP in the sequence
@@ -72,15 +82,15 @@ class TrafficHandler:
         p = Process(target=TrafficHandler.accept,args=(self,))
         p.start()
 
-    def send_job(job):
-        """sends a list of buttonpresses to the next elevator"""
+    def send_job(self,job):
+        """sends a list of buttonpresses to the next elevator, should be run in a seperate process"""
         msg = self.my_ip + job
         if self.next == self.my_ip:
             get_next()
         while not send(msg,self.next):
             get_next()
 
-    def get_next():
+    def get_next(self):
         """fetches the next ip in line and sets it to self.next,skips itself"""
         for x,y in enumerate(self.IPs):
             if y == self.next:
@@ -107,7 +117,13 @@ class TrafficHandler:
         print temp
         ip = temp[0].strip()
         temp[1] = temp[1].replace("]","")
-        floors = temp[1].split(",")
+        jobs = temp[1].split(",")
+        for job in jobs:
+            (floor,direction) = job
+            if self.elevator.check_job(job):
+                self.elevator.add_job(floor,direction,self.elevatorlock)
+            else:
+                Process(target=send_job,args=(self,[job])).start()
         #TODO: send the floors to the elevator, let the elevator see if it
         # wants these floors and then either add them to itself or send them
         # onwards
