@@ -6,21 +6,22 @@ from multiprocessing import *
 import time
 
 class Elevator:
-	DIRECTION_UP = 1
-	DIRECTION_DOWN = -1
-	DIRECTION_STAND = 0
-	LEAVE_DOORS_OPEN = 2
+    DIRECTION_UP = 1
+    DIRECTION_DOWN = -1
+    DIRECTION_STAND = 0
+    LEAVE_DOORS_OPEN = 2
 
-	def __init__(self):
-		self.driver = Driver()
-		self.previous_floor = 1
-		self.direction = self.DIRECTION_UP
-		self.queue = [] #A Queue of orders
+    def __init__(self):
+        self.driver = Driver()
+        self.previous_floor = 1
+        self.direction = self.DIRECTION_UP
+        self.queue = [] #A Queue of orders
         self.task = [] # The current order that is being taken care of
         self.motor_speed = 1000
+        self.elevator = None
 
 
-	def go_to_floor(self, floor,lock):
+    def go_to_floor(self, floor,lock):
 		"""does what its name implies"""
 		current_floor =self.driver.getCurrentFloor()
 		if not current_floor:
@@ -36,7 +37,7 @@ class Elevator:
 
 
 
-	def pop_task(self,lock):
+    def pop_task(self,lock):
          """removes a task from the list of tasks and preforms cleanup"""
          lock.acquire()
          floor = self.task.pop()
@@ -45,13 +46,13 @@ class Elevator:
          self.driver.setChannel(light,0)
          self.open_doors()
 
-	def open_doors(self):
+    def open_doors(self):
          """simulates opening the doors of the elevator and waiting"""
          start = time.clock()
          while time.clock < self.LEAVE_DOORS_OPEN + start:
             self.driver.stop()
 
-	def add_job(self,floor,direction,lock):
+    def add_job(self,floor,direction,lock):
          """adds a job to the queue or task"""
          if task:
             #check whether this could be added as a subtask
@@ -68,7 +69,7 @@ class Elevator:
             task.append((floor,direction))
             lock.release()
 
-	def add_subtask(self,floor,direction,lock):
+    def add_subtask(self,floor,direction,lock):
          """adds a subtask to the task in correct order"""
          lock.acquire()
          for i,sub in enumerate(self.task):
@@ -92,19 +93,28 @@ class Elevator:
 
 
 
-	def read_inputs(self,lock):
-		"""reads inputs and processes them"""
-		for sig in INPUT.BUTTONS:
+    def read_inputs(self,lock):
+        """reads inputs and processes them"""
+        for sig in INPUT.BUTTONS:
 			if self.driver.readChannel(sig):
 				(floor,type) = self.driver.channelToFloor(sig)
 				light = self.driver.getAccordingLight(type, floor)
 				self.driver.setChannel(light, 1)
 				if type == INPUT.IN_BUTTONS:
-                                    self.add_subtask(floor,self.direction,lock)
+                                        self.add_subtask(floor,self.direction,lock)
+
 				elif type == INPUT.DOWN_BUTTONS:
-                                    self.add_job(floor,self.DIRECTION_DOWN,lock)
+                                    job = (floor,self.DIRECTION_DOWN)
+                                    if self.check_job(job):
+                                        self.add_job(floor,self.DIRECTION_DOWN,lock)
+                                    else:
+                                        Process(target=self.elevator.send_job,args=(self.elevator,job)).start()
 				elif type == INPUT.UP_BUTTONS:
-                                    self.add_job(floor,self.DIRECTION_UP,lock)
+                                    job = (floor,self.DIRECTION_UP)
+                                    if self.check_job(job):
+                                        self.add_job(floor,self.DIRECTION_UP,lock)
+                                    else:
+                                        Process(target=self.elevator.send_job,args=(self.elevator,job)).start()
         if self.driver.readChannel(INPUT.OBSTRUCTION):
             self.driver.stop()
         floor = self.driver.getCurrentFloor()
@@ -113,15 +123,15 @@ class Elevator:
             self.previous_floor = floor
 
 
-	def check_job(self,job):
-		"""checks whether or not this elevator wants the given job"""
+    def check_job(self,job):
+        """checks whether or not this elevator wants the given job"""
         (floor,direction) = job
         if not task:
             return True
         elif self.direction == self.DIRECTION_UP == direction and self.previous_floor < floor <=self.task[len(self.task)-1][0]:
-                return True
+            return True
         elif self.direction == self.DIRECTION_DOWN == direction and self.previous_floor > floor >=self.task[len(self.task)-1][0]:
-                return True
+            return True
         else:
             return False
 
@@ -139,8 +149,10 @@ class Elevator:
                     self.task.append(self.queue[i])
 
 
-	def start(self,lock):
+	def start(self,handler):
 		"""starts the elevator"""
+        self.handler = handler
+        lock = Lock()
         input_reader = Process(target=read_inputs,args=(self,lock))
         input_reader.start()
         while True:
