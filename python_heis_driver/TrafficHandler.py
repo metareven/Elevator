@@ -46,10 +46,10 @@ class SocketThread (threading.Thread):
 
 class TrafficHandler:
     TRIES = 5
-    TIMEOUT = 0.2
+    TIMEOUT = 1
 
     def __init__(self):
-        self.IPs = ["localhost"]
+        self.IPs = [socket.getfqdn(),socket.getfqdn()]
         self.my_ip = socket.getfqdn()
         self.port = 8154
         #self.ele = elevator.Elevator()
@@ -75,60 +75,83 @@ class TrafficHandler:
         temp = self.messageid
         self.messageid = 3000+((self.messageid+1)%1000)
         self.idlock.release()
+        return self.messageid
 
 
 
     def send_job(self,job):
         """sends a list of buttonpresses to the next elevator, should be run in a seperate process"""
-        msg = self.my_ip + job
-        if self.next == self.my_ip:
-            get_next()
-        while not send(msg,self.next):
-            get_next()
+        msg = self.my_ip + "[" + job[0] +" "+ job[1] + "]"
+        target = self.next
+        res = self.send(msg,self.next,self.TRIES)
+        while not res:
+            print "was not able to send"
+            res = self.send(msg,self.next,self.TRIES)
+            target = self.get_next()
 
     def get_next(self):
-        """fetches the next ip in line and sets it to self.next,skips itself"""
+        """fetches the next ip in line"""
         for x,y in enumerate(self.IPs):
             if y == self.next:
-                self.next = self.IPs[(x+1)%len(self.IPs)] #if self.IPs[(x+1)%len(self.IPs)]  != self.my_ip else self.IPs[(x+2)%len(self.IPs)]
+                return self.IPs[(x+1)%len(self.IPs)] #if self.IPs[(x+1)%len(self.IPs)]  != self.my_ip else self.IPs[(x+2)%len(self.IPs)]
 
 
 
 
-    def send(self,message,ip,triesleft=TRIES):
+    def send(self,message,ip,triesleft):
         """sends message to ip and returns the number of characters you were able to send"""
+        _id = self.generate_id()
+        time.sleep(0.05)
         try:
-            id = self.generate_id()
             to = socket.socket(socket.AF_INET,socket.SOCK_STREAM) #TCP SOCKET
             to.settimeout(self.TIMEOUT)
+            time.sleep(0.05)
             to.connect((ip,self.port))
-            res = to.send(message+id)
+            time.sleep(0.05)
+            res = to.send(message+str(_id))
             to.close()
             #now lets check if they got the message
             check = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
             check.settimeout(self.TIMEOUT)
-            check.bind((self.my_ip,id))
+            check.bind((self.my_ip,_id))
+            print "waiting for ack"
             check.accept()
+            print "ack received"
             #if accept() went through then we know the message got there
             return res
         except:
-            return send(ip,triesleft-1) if triesleft>=0 else None
+            if triesleft < 0:
+                return None
+            else:
+                print "tries left " + str(triesleft)
+                tr = triesleft-1
+                return self.send(ip,tr,triesleft-1)
 
     def process_message(self,message):
         """processes a message"""
         temp = message.strip()
-        temp = message.split("[")
+        if not message:
+            return 0
+        print "------------.-.-.-.-.-.-"
         print temp
+        print "--------------.-.-.-.-.-."
+
+        temp = message.split("[")
         ip = temp[0].strip()
         arr = temp[1].split("]")
         jobs = arr[0].split(",")
         _id = int(arr[1].strip())
         for job in jobs:
-            (floor,direction) = job.split(" ")
-            if self.ele.check_job(job):
+            try:
+                (floor,direction) = job.split(" ")
+            except:
+                print job
+                time.sleep(10000)
+            if False: # self.ele.check_job(job):
                 self.ele.add_job(floor,direction,self.elevatorlock)
             else:
-                Process(target=send_job,args=(self,[job])).start()
+                SocketProcess(func=self.send_job,args=(job,)).start()
+        print "ack ack"
         #let's "ack" that message
         for i in xrange(self.TRIES):
             try:
@@ -149,7 +172,7 @@ class TrafficHandler:
         while True:
             (sock,addr) = server_socket.accept()
             (ip,port) = addr
-            print ip + " connected"
+            #print ip + " connected"
             #p = Process(target=TrafficHandler.receive_message,args=(sock,ip))
             #p.start()
             #p.join()
@@ -183,16 +206,11 @@ class TrafficHandler:
 def main():
     handler = TrafficHandler()
     handler.start()
-    while True:
-        time.sleep(1)
-        try:
-            s = socket.socket()
-            #s.bind(("localhost",9876))
-            s.connect((socket.getfqdn(),8154))
-            s.send("0.0.0.0[1 1,2 1,3 1]1")
-            s.close()
-        except:
-            print "crash =( "
-    pass
+    s = socket.socket()
+    #s.bind(("localhost",9876))
+    s.connect((socket.getfqdn(),8154))
+    s.send("0.0.0.0[1 1,2 1,3 1]"+str(8100))
+    s.close()
+
 if __name__ == '__main__':
     main()
