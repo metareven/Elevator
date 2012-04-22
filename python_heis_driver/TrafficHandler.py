@@ -46,10 +46,10 @@ class SocketThread (threading.Thread):
 
 class TrafficHandler:
     TRIES = 5
-    TIMEOUT = 1
+    TIMEOUT = 0.2
 
     def __init__(self):
-        self.IPs = [socket.getfqdn(),socket.getfqdn()]
+        self.IPs = ["Laks","Laks"]
         self.my_ip = socket.getfqdn()
         self.port = 8154
         #self.ele = elevator.Elevator()
@@ -81,11 +81,11 @@ class TrafficHandler:
 
     def send_job(self,job):
         """sends a list of buttonpresses to the next elevator, should be run in a seperate process"""
-        msg = self.my_ip + "[" + job[0] +" "+ job[1] + "]"
+        msg = self.my_ip + "[" + job[1] + "]"
         target = self.next
         res = self.send(msg,self.next,self.TRIES)
         while not res:
-            print "was not able to send"
+            #print "was not able to send"
             res = self.send(msg,self.next,self.TRIES)
             target = self.get_next()
 
@@ -101,14 +101,29 @@ class TrafficHandler:
     def send(self,message,ip,triesleft):
         """sends message to ip and returns the number of characters you were able to send"""
         _id = self.generate_id()
-        time.sleep(0.05)
         try:
             to = socket.socket(socket.AF_INET,socket.SOCK_STREAM) #TCP SOCKET
-            to.settimeout(self.TIMEOUT)
-            time.sleep(0.05)
+            to.settimeout(self.TIMEOUT + 1)
+            print "trying to connect to " + ip + " on" + self.port
             to.connect((ip,self.port))
-            time.sleep(0.05)
+            print "done connecting"
             res = to.send(message+str(_id))
+            counter = 0
+            while True:
+                try:
+                    if(counter > self.TRIES):
+                        print "returning none"
+                        return None
+                    print "waiting for ack " + str(counter)
+                    counter += 1
+                    time.sleep(self.TIMEOUT)
+                    to.recv(1024)
+                except:
+                    time.sleep(0.1)
+                    print "did not get acked"
+            to.send("ackack")
+            print "managed to ackack"
+            """
             to.close()
             #now lets check if they got the message
             check = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
@@ -118,6 +133,7 @@ class TrafficHandler:
             check.accept()
             print "ack received"
             #if accept() went through then we know the message got there
+            """
             return res
         except:
             if triesleft < 0:
@@ -142,26 +158,28 @@ class TrafficHandler:
         jobs = arr[0].split(",")
         _id = int(arr[1].strip())
         for job in jobs:
-            try:
-                (floor,direction) = job.split(" ")
-            except:
-                print job
-                time.sleep(10000)
+            (floor,direction) = job.split(" ")
             if False: # self.ele.check_job(job):
                 self.ele.add_job(floor,direction,self.elevatorlock)
             else:
-                SocketProcess(func=self.send_job,args=(job,)).start()
-        print "ack ack"
+                temppros = SocketProcess(func=self.send_job,args=((floor,job),))
+                temppros.start()
         #let's "ack" that message
+        """
         for i in xrange(self.TRIES):
             try:
                 sock = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
                 sock.settimeout(self.TIMEOUT)
+                #print "ip " + ip
+                #print "id" + str(_id)
                 sock.connect((ip,_id))
                 sock.close()
+                #print "managed to ack"
                 break
             except:
-                print "could not ack to " + ip + " on " +str(_id)
+                #print "could not ack to " + ip + " on " +str(_id)
+                pass
+        """
         return 1
 
     def accept(self):
@@ -172,22 +190,44 @@ class TrafficHandler:
         while True:
             (sock,addr) = server_socket.accept()
             (ip,port) = addr
-            #print ip + " connected"
-            #p = Process(target=TrafficHandler.receive_message,args=(sock,ip))
-            #p.start()
-            #p.join()
-            #p = SocketProcess(1,TrafficHandler.receive_message,(self,1,ip))
-            #p.start()
             TrafficHandler.receive_message(self,sock,ip)
 
     def receive_message(self,sock,ip,triesleft = TRIES):
         """receives a message from a socket"""
+        ackacked = False;
         sock.settimeout(TrafficHandler.TIMEOUT)
+        #process the message
+        processcounter = 0
         res = TrafficHandler.process_message(self,sock.recv(1024))
+        while not res:
+            res = TrafficHandler.process_message(self,sock.recv(1024))
+            processcounter += 1
+            if processcounter > self.TRIES:
+                return None
+        print "doen processing"
+        counter = 0
+        nomessagecount = 0
+        while not ackacked:
+            sock.send("ack")
+            print "sending ack"
+        #wait for the ack-ack
+            try:
+                 sock.recv(1024)
+                 ackacked = True
+            except:
+                time.sleep(0.1)
+                counter += 1
+                if counter > self.TRIES:
+                    return None
+        print "done recving"
+
+
+        """
         if not res:
             return self.receive_message(sock,ip,triesleft-1) if triesleft>=0 else None
         else:
             return res
+        """
 
 
 
@@ -209,7 +249,7 @@ def main():
     s = socket.socket()
     #s.bind(("localhost",9876))
     s.connect((socket.getfqdn(),8154))
-    s.send("0.0.0.0[1 1,2 1,3 1]"+str(8100))
+    s.send(socket.getfqdn() + "[1 1]"+str(3100))
     s.close()
 
 if __name__ == '__main__':
