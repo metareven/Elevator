@@ -13,7 +13,7 @@ from multiprocessing import *
 import socket
 import time
 import threading
-#import elevator
+import elevator
 
 """TODO
 --------------------------------------------------------------------------------
@@ -45,14 +45,14 @@ class SocketThread (threading.Thread):
 
 
 class TrafficHandler:
-    TRIES = 5
+    TRIES = 1
     TIMEOUT = 0.2
 
     def __init__(self):
-        self.IPs = ["Laks","Laks"]
+        self.IPs = [socket.getfqdn(), "Laks"]
         self.my_ip = socket.getfqdn()
         self.port = 8154
-        #self.ele = elevator.Elevator()
+        self.ele = elevator.Elevator()
         self.elevatorlock = Lock()
         self.idlock = Lock()
         self.messageid = 0
@@ -67,6 +67,7 @@ class TrafficHandler:
         #p.start()
        #p2 = SocketThread(func=TrafficHandler.accept,args=(1,))
         #p2.start()
+        print "start"
         p3 = SocketProcess(func=TrafficHandler.accept,args=(self,))
         p3.start()
 
@@ -85,14 +86,15 @@ class TrafficHandler:
         target = self.next
         res = self.send(msg,self.next,self.TRIES)
         while not res:
-            #print "was not able to send"
-            res = self.send(msg,self.next,self.TRIES)
-            target = self.get_next()
+            print "was not able to send to " + str(target)
+            target = self.get_next(target)
+            res = self.send(msg,target,self.TRIES)
 
-    def get_next(self):
+
+    def get_next(self,next):
         """fetches the next ip in line"""
         for x,y in enumerate(self.IPs):
-            if y == self.next:
+            if y == next:
                 return self.IPs[(x+1)%len(self.IPs)] #if self.IPs[(x+1)%len(self.IPs)]  != self.my_ip else self.IPs[(x+2)%len(self.IPs)]
 
 
@@ -100,14 +102,20 @@ class TrafficHandler:
 
     def send(self,message,ip,triesleft):
         """sends message to ip and returns the number of characters you were able to send"""
+        if triesleft <= 0:
+            return False
         _id = self.generate_id()
+
+        to = socket.socket(socket.AF_INET,socket.SOCK_STREAM) #TCP SOCKET
+        to.settimeout(self.TIMEOUT)
+        res = False
+        #print "trying to connect to " + ip + " on" + self.port
         try:
-            to = socket.socket(socket.AF_INET,socket.SOCK_STREAM) #TCP SOCKET
-            to.settimeout(self.TIMEOUT + 1)
-            print "trying to connect to " + ip + " on" + self.port
+            print "ffffffffffffffff"
             to.connect((ip,self.port))
-            print "done connecting"
+            print "Sending message"
             res = to.send(message+str(_id))
+            print "res " + str(res)
             counter = 0
             while True:
                 try:
@@ -116,14 +124,20 @@ class TrafficHandler:
                         return None
                     print "waiting for ack " + str(counter)
                     counter += 1
-                    time.sleep(self.TIMEOUT)
-                    to.recv(1024)
+                    #time.sleep(self.TIMEOUT)
+                    print "About to receive ACK"
+                    data = to.recv(1024)
+                    print data
+                    if data == "ACK":
+                        break
                 except:
-                    time.sleep(0.1)
+                    #time.sleep(0.1)
                     print "did not get acked"
-            to.send("ackack")
+                to.send("ACKACK")
             print "managed to ackack"
-            """
+        except:
+            self.send(message, ip, triesleft-1)
+        """
             to.close()
             #now lets check if they got the message
             check = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
@@ -133,15 +147,8 @@ class TrafficHandler:
             check.accept()
             print "ack received"
             #if accept() went through then we know the message got there
-            """
-            return res
-        except:
-            if triesleft < 0:
-                return None
-            else:
-                print "tries left " + str(triesleft)
-                tr = triesleft-1
-                return self.send(ip,tr,triesleft-1)
+        """
+        return res
 
     def process_message(self,message):
         """processes a message"""
@@ -159,7 +166,7 @@ class TrafficHandler:
         _id = int(arr[1].strip())
         for job in jobs:
             (floor,direction) = job.split(" ")
-            if False: # self.ele.check_job(job):
+            if self.ele.check_job(job):
                 self.ele.add_job(floor,direction,self.elevatorlock)
             else:
                 temppros = SocketProcess(func=self.send_job,args=((floor,job),))
@@ -185,49 +192,37 @@ class TrafficHandler:
     def accept(self):
         """listens for incoming connections and stuff"""
         server_socket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
-        server_socket.bind((self.my_ip,8154))
-        server_socket.listen(len(self.IPs))
+        server_socket.bind((self.my_ip,self.port))
+        server_socket.listen(200)
+        print "accepting"
         while True:
             (sock,addr) = server_socket.accept()
+            print addr
             (ip,port) = addr
             TrafficHandler.receive_message(self,sock,ip)
 
     def receive_message(self,sock,ip,triesleft = TRIES):
         """receives a message from a socket"""
-        ackacked = False;
-        sock.settimeout(TrafficHandler.TIMEOUT)
-        #process the message
-        processcounter = 0
-        res = TrafficHandler.process_message(self,sock.recv(1024))
-        while not res:
-            res = TrafficHandler.process_message(self,sock.recv(1024))
-            processcounter += 1
-            if processcounter > self.TRIES:
-                return None
-        print "doen processing"
+        sock.settimeout(self.TIMEOUT)
+        while 1:
+            data = sock.recv(1024)
+            if data:
+                print "Received data " + str(data)
+                break
+        self.process_message(data)
+        print "Done processing"
         counter = 0
-        nomessagecount = 0
-        while not ackacked:
-            sock.send("ack")
-            print "sending ack"
-        #wait for the ack-ack
-            try:
-                 sock.recv(1024)
-                 ackacked = True
-            except:
-                time.sleep(0.1)
+        got_response = False
+        while counter < self.TRIES:
+            print"Sending ACK"
+            sock.send("ACK")
+            response = sock.recv(1024)
+            if response == "ACKACK":
+                got_response = True
+                return
+            else:
                 counter += 1
-                if counter > self.TRIES:
-                    return None
-        print "done recving"
 
-
-        """
-        if not res:
-            return self.receive_message(sock,ip,triesleft-1) if triesleft>=0 else None
-        else:
-            return res
-        """
 
 
 
@@ -244,6 +239,7 @@ class TrafficHandler:
 
 
 def main():
+    print "main"
     handler = TrafficHandler()
     handler.start()
     s = socket.socket()
