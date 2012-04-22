@@ -5,6 +5,17 @@ from screamer import Screamer
 from multiprocessing import *
 import time
 
+class ElevatorProcess():
+    def __init__(self, target,args):
+        super(ElevatorProcess,self).__init__()
+        self.target = target
+        self.args = args
+        self.is_stop = Event()
+        self.is_stop.clear()
+
+    def run(self):
+        self.target(*self.args)
+
 class Elevator:
     DIRECTION_UP = 1
     DIRECTION_DOWN = -1
@@ -108,13 +119,13 @@ class Elevator:
                                     if self.check_job(job):
                                         self.add_job(floor,self.DIRECTION_DOWN,lock)
                                     else:
-                                        Process(target=self.elevator.send_job,args=(self.elevator,job)).start()
+                                        ElevatorProcess(target=self.elevator.send_job,args=(self.elevator,job)).start()
 				elif type == INPUT.UP_BUTTONS:
                                     job = (floor,self.DIRECTION_UP)
                                     if self.check_job(job):
                                         self.add_job(floor,self.DIRECTION_UP,lock)
                                     else:
-                                        Process(target=self.elevator.send_job,args=(self.elevator,job)).start()
+                                        ElevatorProcess(target=self.elevator.send_job,args=(self.elevator,job)).start()
         if self.driver.readChannel(INPUT.OBSTRUCTION):
             self.driver.stop()
         floor = self.driver.getCurrentFloor()
@@ -153,7 +164,7 @@ class Elevator:
 		"""starts the elevator"""
         self.handler = handler
         lock = Lock()
-        input_reader = Process(target=read_inputs,args=(self,lock))
+        input_reader = ElevatorProcess(target=read_inputs,args=(self,lock))
         input_reader.start()
         while True:
             if self.task:
