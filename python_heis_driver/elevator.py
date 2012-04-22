@@ -29,7 +29,7 @@ class Elevator:
         self.queue = [] #A Queue of orders
         self.task = [] # The current order that is being taken care of
         self.motor_speed = 1000
-        self.elevator = None
+        self.elevator = None # *** hva brukes denne til og hvor settes den til en verdi? ***
 
 
     def go_to_floor(self, floor,lock):
@@ -45,6 +45,7 @@ class Elevator:
 			self.pop_task(lock)
 		elif current_floor > floor:
 			self.driver.move(OUTPUT.MOTOR_DOWN,self.motor_speed)
+			self.direction = self.DIRECTION_DOWN
 
 
 
@@ -60,7 +61,7 @@ class Elevator:
     def open_doors(self):
          """simulates opening the doors of the elevator and waiting"""
          start = time.clock()
-         while time.clock < self.LEAVE_DOORS_OPEN + start:
+         while time.clock() < self.LEAVE_DOORS_OPEN + start:
             self.driver.stop()
 
     def add_job(self,floor,direction,lock):
@@ -68,7 +69,7 @@ class Elevator:
          if task:
             #check whether this could be added as a subtask
             if self.direction == self.DIRECTION_UP == direction and self.previous_floor < floor <=self.task[len(self.task)-1][0]:
-                self.add_subtask(floor,direction)
+                self.add_subtask(floor,direction,lock)
             elif self.direction == self.DIRECTION_DOWN == direction and self.previous_floor > floor >=self.task[len(self.task)-1][0]:
                 self.add_subtask(floor,direction,lock)
             else:
@@ -158,6 +159,9 @@ class Elevator:
             for i in len(self.queue):
                 if abs(self.queue[i][0] - counter) <= counter:
                     self.task.append(self.queue[i])
+                    self.queue.remove(self.queue[i])
+                    return
+            counter += 1
 
 
 	def start(self,handler):
