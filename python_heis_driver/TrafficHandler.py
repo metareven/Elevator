@@ -12,7 +12,8 @@
 from multiprocessing import *
 import socket
 import time
-import elevator
+import threading
+#import elevator
 
 """TODO
 --------------------------------------------------------------------------------
@@ -22,16 +23,24 @@ import elevator
 
 
 class SocketProcess(Process):
-    def __init__(self,socket,fun,args):
+    def __init__(self, func,args):
         super(SocketProcess,self).__init__()
-        self.socket = socket
-        self.fun = fun
+        self.func = func
         self.args = args
         self.is_stop = Event()
         self.is_stop.clear()
 
     def run(self):
-        self.fun(*self.args)
+        self.func(*self.args)
+
+class SocketThread (threading.Thread):
+    def __init__(self, func,args):
+        self.func = func
+        self.args = args
+        threading.Thread.__init__(self)
+
+    def run(self):
+        self.func(*self.args)
 
 
 
@@ -43,7 +52,7 @@ class TrafficHandler:
         self.IPs = ["localhost"]
         self.my_ip = socket.getfqdn()
         self.port = 8154
-        self.ele = elevator.Elevator()
+        #self.ele = elevator.Elevator()
         self.elevatorlock = Lock()
         self.idlock = Lock()
         self.messageid = 0
@@ -54,10 +63,12 @@ class TrafficHandler:
 
     def start(self):
         """starts the TrafficHandler"""
-        p = Process(target=TrafficHandler.accept,args=(self,))
-        p.start()
-        self.ele.start(self)
-        p.terminate()
+        #p = Process(target=TrafficHandler.accept,args=(1,))
+        #p.start()
+       #p2 = SocketThread(func=TrafficHandler.accept,args=(1,))
+        #p2.start()
+        p3 = SocketProcess(func=TrafficHandler.accept,args=(self,))
+        p3.start()
 
     def generate_id(self):
         self.idlock.acquire()
@@ -111,9 +122,9 @@ class TrafficHandler:
         ip = temp[0].strip()
         arr = temp[1].split("]")
         jobs = arr[0].split(",")
-        id = int(arr[1].strip())
+        _id = int(arr[1].strip())
         for job in jobs:
-            (floor,direction) = job
+            (floor,direction) = job.split(" ")
             if self.ele.check_job(job):
                 self.ele.add_job(floor,direction,self.elevatorlock)
             else:
@@ -123,11 +134,11 @@ class TrafficHandler:
             try:
                 sock = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
                 sock.settimeout(self.TIMEOUT)
-                sock.connect((ip,id))
+                sock.connect((ip,_id))
                 sock.close()
                 break
             except:
-                print "could not ack to " + ip + " on " +str(id)
+                print "could not ack to " + ip + " on " +str(_id)
         return 1
 
     def accept(self):
@@ -135,7 +146,6 @@ class TrafficHandler:
         server_socket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
         server_socket.bind((self.my_ip,8154))
         server_socket.listen(len(self.IPs))
-        print "server initialized"
         while True:
             (sock,addr) = server_socket.accept()
             (ip,port) = addr
@@ -179,7 +189,7 @@ def main():
             s = socket.socket()
             #s.bind(("localhost",9876))
             s.connect((socket.getfqdn(),8154))
-            s.send("0.0.0.0[hei,paa,deg]")
+            s.send("0.0.0.0[1 1,2 1,3 1]1")
             s.close()
         except:
             print "crash =( "
